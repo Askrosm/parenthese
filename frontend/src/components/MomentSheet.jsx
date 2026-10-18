@@ -7,6 +7,8 @@ import { DESCRIBED_TYPES, eventTitle } from '../utils/lifeTimeline.js'
 import { inferMediaTypeFromMimeType } from '../utils/mediaUpload.js'
 import { readContributorName, saveContributorName } from '../utils/contributorName.js'
 import './MomentSheet.css'
+import ImmichAssetPicker from './ImmichAssetPicker.jsx'
+import { fetchImmichConfig } from '../api/immichApi.js'
 
 // Fiche « Ajouter un moment » de l'onglet Vie : quoi, quand, où, et des souvenirs (photo, vidéo, acte en
 // PDF, enregistrement). La date exacte, la fin, la source et la note restent dans « Plus de détails ».
@@ -48,6 +50,15 @@ export default function MomentSheet({ person, entry = null, treeId, token, media
   const [linkedIds, setLinkedIds] = useState(() => (entry?.mediaIds || []).map(String))
   const [files, setFiles] = useState([])
   const [picking, setPicking] = useState(false)
+  const [immichConfigured, setImmichConfigured] = useState(false)
+  const [pickingImmich, setPickingImmich] = useState(false)
+  useEffect(() => {
+    let cancelled = false
+    if (isAdmin) fetchImmichConfig(treeId, token).then(({ config }) => {
+      if (!cancelled) setImmichConfigured(Boolean(config?.configured))
+    }).catch(() => {})
+    return () => { cancelled = true }
+  }, [isAdmin, treeId, token])
   const [name, setName] = useState(() => readContributorName() || '')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -78,14 +89,22 @@ export default function MomentSheet({ person, entry = null, treeId, token, media
   const pickable = medias.filter((m) => m.type !== 'citation')
   const yearValid = !year || /^\d{4}$/.test(year)
   const endValid = !endYear || (/^\d{4}$/.test(endYear) && (!year || Number(endYear) >= Number(year)))
-  const canSave = (milestone || what.trim().length > 0) && yearValid && endValid && !busy
+  const canSave = (milestone || what.trim().length > 0) && yearValid && endValid && !busy && !pickingImmich
 
   const addFiles = (list) => {
     const next = [...list].map((file) => {
       const type = inferMediaTypeFromMimeType(file.type)
       return { key: `${file.name}-${file.size}-${file.lastModified}`, file, type, preview: type === 'photo' ? URL.createObjectURL(file) : '' }
     })
-    setFiles((current) => [...current, ...next.filter((n) => !current.some((c) => c.key === n.key))])
+    setFiles((current) => {
+      const merged = [...current]
+      for (const item of next) {
+        if (merged.some((existing) => existing.key === item.key)) {
+          if (item.preview) URL.revokeObjectURL(item.preview)
+        } else merged.push(item)
+      }
+      return merged
+    })
   }
   const toggleLinked = (id) => setLinkedIds((ids) => (ids.includes(id) ? ids.filter((x) => x !== id) : [...ids, id]))
 
@@ -238,6 +257,7 @@ export default function MomentSheet({ person, entry = null, treeId, token, media
               </ul>
             )}
             <div className="ms-file-actions">
+              {isAdmin && immichConfigured && <button type="button" className="ms-file-add" disabled={busy} onClick={() => setPickingImmich((value) => !value)}>{t('Depuis Immich')}</button>}
               <button type="button" ref={milestone ? firstFieldRef : undefined} className="ms-file-add" onClick={() => fileRef.current?.click()} disabled={busy || !onUploadFile}>
                 <Paperclip size={15} strokeWidth={1.8} />
                 {t('Ajouter un fichier')}
@@ -249,6 +269,7 @@ export default function MomentSheet({ person, entry = null, treeId, token, media
                 </button>
               )}
             </div>
+            {pickingImmich && <ImmichAssetPicker treeId={treeId} token={token} onSelect={(file) => addFiles([file])} onClose={() => setPickingImmich(false)} />}
             <input ref={fileRef} type="file" accept={ACCEPTED_FILES} multiple hidden onChange={(e) => { addFiles(e.target.files || []); e.target.value = '' }} />
             {picking && (
               <div className="ms-pick" role="group" aria-label={t('Souvenirs de {name}', { name: person.firstName })}>

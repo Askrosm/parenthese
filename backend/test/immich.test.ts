@@ -65,6 +65,71 @@ function mockImmichPerson(options: { thumbnailPath?: string; thumbnailStatus?: n
   })
 }
 
+describe('Souvenirs Immich', () => {
+  it('réserve la photothèque aux administrateurs et ne contacte pas Immich en cas de refus', async () => {
+    const app = createApp()
+    const token = await createUserToken(app)
+    prismaMock.treeMembership.findUnique.mockResolvedValue(null)
+    const response = await app.inject({ method: 'GET', url: '/trees/tree-1/immich/assets', headers: { authorization: `Bearer ${token}` } })
+    expect(response.statusCode).toBe(403)
+    expect(fetchMock).not.toHaveBeenCalled()
+    await app.close()
+  })
+
+  it('pagine les vidéos sans exposer les métadonnées privées', async () => {
+    const app = createApp()
+    const token = await createUserToken(app)
+    fetchMock.mockResolvedValue(await jsonResponse({ assets: { items: [{ id: immichPersonId, type: 'VIDEO', originalFileName: 'famille.mp4', originalPath: '/private/video.mp4' }], nextPage: '3' } }))
+    const response = await app.inject({ method: 'GET', url: '/trees/tree-1/immich/assets?page=2&type=VIDEO', headers: { authorization: `Bearer ${token}` } })
+    expect(response.statusCode).toBe(200)
+    expect(response.json()).toEqual({ assets: [{ id: immichPersonId, type: 'VIDEO', name: 'famille.mp4' }], hasNextPage: true })
+    expect(fetchMock.mock.calls[0][0]).toBe('http://immich.test/api/search/metadata')
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toMatchObject({ page: 2, type: 'VIDEO', size: 30 })
+    await app.close()
+  })
+
+  it('refuse les originaux trop gros avant de les lire', async () => {
+    const app = createApp()
+    const token = await createUserToken(app)
+    fetchMock.mockResolvedValue(new Response('too large', { headers: { 'content-length': String(21 * 1024 * 1024) } }))
+    const response = await app.inject({ method: 'GET', url: `/trees/tree-1/immich/assets/${immichPersonId}/original`, headers: { authorization: `Bearer ${token}` } })
+    expect(response.statusCode).toBe(413)
+    await app.close()
+  })
+
+  it('sert une photo avec son type réel et refuse le HTML', async () => {
+    const app = createApp()
+    const token = await createUserToken(app)
+    const options = { method: 'GET' as const, url: `/trees/tree-1/immich/assets/${immichPersonId}/original`, headers: { authorization: `Bearer ${token}` } }
+    fetchMock.mockResolvedValueOnce(new Response(new Uint8Array(jpegBytes)))
+    const response = await app.inject(options)
+    expect(response.statusCode).toBe(200)
+    expect(response.headers['content-type']).toBe('image/jpeg')
+    fetchMock.mockResolvedValueOnce(new Response('<html>unsafe</html>'))
+    expect((await app.inject(options)).statusCode).toBe(400)
+    await app.close()
+  })
+
+  it('importe les octets d’une vidéo et coupe un flux qui dépasse la limite', async () => {
+    const app = createApp()
+    const token = await createUserToken(app)
+    const options = { method: 'GET' as const, url: `/trees/tree-1/immich/assets/${immichPersonId}/original`, headers: { authorization: `Bearer ${token}` } }
+    const video = Buffer.from([0, 0, 0, 24, ...Buffer.from('ftypisom'), 0, 0, 0, 0])
+    fetchMock.mockResolvedValueOnce(new Response(new Uint8Array(video)))
+    const response = await app.inject(options)
+    expect(response.statusCode).toBe(200)
+    expect(response.headers['content-type']).toBe('video/mp4')
+    expect(response.rawPayload).toEqual(video)
+    const cancel = vi.fn()
+    fetchMock.mockResolvedValueOnce(new Response(new ReadableStream({
+      start(controller) { controller.enqueue(new Uint8Array(21 * 1024 * 1024)) }, cancel,
+    })))
+    expect((await app.inject(options)).statusCode).toBe(413)
+    expect(cancel).toHaveBeenCalled()
+    await app.close()
+  })
+})
+
 async function createUserToken(app: FastifyInstance, userId = 'user-1'): Promise<string> {
   await app.ready()
   return (app as any).jwt.sign(

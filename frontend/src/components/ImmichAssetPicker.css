@@ -1,0 +1,4 @@
+.ms-immich { min-width: 0; border: 1px solid var(--pz-line); border-radius: 12px; padding: 12px; }
+.ms-immich-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 8px; max-height: 300px; overflow: auto; margin: 12px 0; }
+.ms-immich-asset { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 8px; min-width: 0; }
+.ms-immich-asset span { max-width: 100%; overflow: hidden; text-overflow: ellipsis; }

@@ -6,6 +6,8 @@ import GeoMediaThumbnail from './GeoMediaThumbnail'
 import './MediaManagerPanel.css'
 import PzBusy from './PzBusy.jsx'
 import { t } from '../i18n/index.js'
+import ImmichAssetPicker from './ImmichAssetPicker.jsx'
+import { fetchImmichConfig } from '../api/immichApi.js'
 
 const MEDIA_TYPES = [
   { value: 'photo', label: t('Photo'), Icon: Image },
@@ -32,6 +34,8 @@ const MediaManagerPanel = ({
   errorMessage,
   notice = '',
   canManage = true,
+  treeId,
+  token,
   onClose,
   onUpload,
   onMove,
@@ -40,6 +44,16 @@ const MediaManagerPanel = ({
   const [caption, setCaption] = useState('')
   const [source, setSource] = useState('')
   const [file, setFile] = useState(null)
+  const [immichConfigured, setImmichConfigured] = useState(false)
+  const [pickingImmich, setPickingImmich] = useState(false)
+  useEffect(() => {
+    let cancelled = false
+    if (visible && canManage && treeId && token) fetchImmichConfig(treeId, token).then(({ config }) => {
+      if (!cancelled) setImmichConfigured(Boolean(config?.configured))
+    }).catch(() => { if (!cancelled) setImmichConfigured(false) })
+    return () => { cancelled = true }
+  }, [visible, canManage, treeId, token])
+  useEffect(() => { if (!visible) { setPickingImmich(false); setImmichConfigured(false) } }, [visible])
   const [mediaType, setMediaType] = useState('photo')
   const [citationText, setCitationText] = useState('')
   const [videoMode, setVideoMode] = useState('file') // 'file' | 'youtube'
@@ -53,7 +67,7 @@ const MediaManagerPanel = ({
   const isCitation = mediaType === 'citation'
   const isYoutubeVideo = mediaType === 'video' && videoMode === 'youtube'
   const canUpload = useMemo(() => {
-    if (loading) {
+    if (loading || pickingImmich) {
       return false
     }
 
@@ -70,7 +84,7 @@ const MediaManagerPanel = ({
     }
 
     return Boolean(file)
-  }, [canManage, citationText, contributorName, file, isCitation, isYoutubeVideo, loading, youtubeUrl])
+  }, [canManage, citationText, contributorName, file, isCitation, isYoutubeVideo, loading, pickingImmich, youtubeUrl])
   const fileAccept = useMemo(() => getAcceptForMediaType(mediaType), [mediaType])
 
   if (!visible || !person) {
@@ -174,6 +188,10 @@ const MediaManagerPanel = ({
             </div>
           )}
 
+          {canManage && immichConfigured && <button type="button" className="pz-btn pz-btn--soft" disabled={loading} onClick={() => setPickingImmich((value) => !value)}>{t('Depuis Immich')}</button>}
+          {pickingImmich && canManage && <ImmichAssetPicker treeId={treeId} token={token} onClose={() => setPickingImmich(false)} onSelect={(selectedFile) => {
+            setFile(selectedFile); setMediaType(selectedFile.type.startsWith('video/') ? 'video' : 'photo'); setVideoMode('file'); setPickingImmich(false)
+          }} />}
           {!isCitation && !isYoutubeVideo && (
             <div className="pz-field">
               <label htmlFor="mediaUploadFile" className="mm-drop">
