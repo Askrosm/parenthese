@@ -66,6 +66,49 @@ function mockImmichPerson(options: { thumbnailPath?: string; thumbnailStatus?: n
 }
 
 describe('Souvenirs Immich', () => {
+  it('combine le contexte et un visage sur la recherche intelligente Immich', async () => {
+    const app = createApp()
+    const token = await createUserToken(app)
+    fetchMock.mockResolvedValue(await jsonResponse({ assets: { items: [], nextPage: null } }))
+    const response = await app.inject({ method: 'GET', url: `/trees/tree-1/immich/assets?q=repas%20au%20jardin&personId=${immichPersonId}&page=2`, headers: { authorization: `Bearer ${token}` } })
+    expect(response.statusCode).toBe(200)
+    expect(fetchMock.mock.calls[0][0]).toBe('http://immich.test/api/search/smart')
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({ page: 2, size: 30, type: 'IMAGE', isTrashed: false, query: 'repas au jardin', personIds: [immichPersonId] })
+    await app.close()
+  })
+
+  it('filtre par visage sans contexte via les métadonnées', async () => {
+    const app = createApp()
+    const token = await createUserToken(app)
+    fetchMock.mockResolvedValue(await jsonResponse({ assets: { items: [], nextPage: null } }))
+    const response = await app.inject({ method: 'GET', url: `/trees/tree-1/immich/assets?personId=${immichPersonId}&q=%20%20`, headers: { authorization: `Bearer ${token}` } })
+    expect(response.statusCode).toBe(200)
+    expect(fetchMock.mock.calls[0][0]).toBe('http://immich.test/api/search/metadata')
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toMatchObject({ personIds: [immichPersonId] })
+    await app.close()
+  })
+
+  it('refuse un visage invalide et un contexte excessif avant tout appel distant', async () => {
+    const app = createApp()
+    const token = await createUserToken(app)
+    for (const query of ['personId=invalid', `q=${'x'.repeat(501)}`]) {
+      expect((await app.inject({ method: 'GET', url: `/trees/tree-1/immich/assets?${query}`, headers: { authorization: `Bearer ${token}` } })).statusCode).toBe(400)
+    }
+    expect(fetchMock).not.toHaveBeenCalled()
+    await app.close()
+  })
+
+  it('charge un aperçu agrandi sans demander le fichier original', async () => {
+    const app = createApp()
+    const token = await createUserToken(app)
+    fetchMock.mockResolvedValue(new Response(new Uint8Array(jpegBytes)))
+    const response = await app.inject({ method: 'GET', url: `/trees/tree-1/immich/assets/${immichPersonId}/preview`, headers: { authorization: `Bearer ${token}` } })
+    expect(response.statusCode).toBe(200)
+    expect(fetchMock.mock.calls[0][0]).toBe(`http://immich.test/api/assets/${immichPersonId}/thumbnail?size=preview`)
+    expect(response.headers['content-type']).toBe('image/jpeg')
+    await app.close()
+  })
+
   it('réserve la photothèque aux administrateurs et ne contacte pas Immich en cas de refus', async () => {
     const app = createApp()
     const token = await createUserToken(app)

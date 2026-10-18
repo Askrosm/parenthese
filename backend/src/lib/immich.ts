@@ -128,8 +128,13 @@ export class ImmichClient {
     }
   }
 
-  async listAssets(page: number, type: 'IMAGE' | 'VIDEO') {
-    const response = await this.fetch('/api/search/metadata', { page, size: 30, type, isTrashed: false })
+  async listAssets(page: number, type: 'IMAGE' | 'VIDEO', filters: { query?: string; personId?: string } = {}) {
+    const query = filters.query?.trim()
+    const response = await this.fetch(query ? '/api/search/smart' : '/api/search/metadata', {
+      page, size: 30, type, isTrashed: false,
+      ...(query ? { query } : {}),
+      ...(filters.personId ? { personIds: [filters.personId] } : {}),
+    })
     const payload = await this.readJson(response) as { assets?: { items?: Array<{ id: string; type: string; originalFileName: string }>; nextPage?: string | null } }
     if (!Array.isArray(payload.assets?.items)) throw new ImmichUnavailableError('Liste de médias Immich illisible')
     return {
@@ -140,8 +145,9 @@ export class ImmichClient {
     }
   }
 
-  async getAssetBytes(assetId: string, thumbnail: boolean, maxBytes: number): Promise<Buffer | null> {
-    return this.readBytes(`/api/assets/${encodeURIComponent(assetId)}/${thumbnail ? 'thumbnail?size=thumbnail' : 'original'}`, maxBytes)
+  async getAssetBytes(assetId: string, thumbnail: boolean, maxBytes: number, preview = false): Promise<Buffer | null> {
+    const variant = preview ? 'thumbnail?size=preview' : thumbnail ? 'thumbnail?size=thumbnail' : 'original'
+    return this.readBytes(`/api/assets/${encodeURIComponent(assetId)}/${variant}`, maxBytes)
   }
 
   // Toutes les personnes (sans les masquées), en suivant la pagination d'Immich.

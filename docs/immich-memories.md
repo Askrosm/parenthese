@@ -6,6 +6,14 @@ de l'onglet **Vie**. Choisir Photos ou Vidéos, parcourir les pages puis sélect
 un média. Dans un moment, plusieurs médias peuvent être sélectionnés avant de
 terminer la sélection. Enregistrer ensuite le souvenir ou le moment.
 
+Le sélecteur reprend la présentation de Parenthèse. Cliquer sur une photo ouvre
+un aperçu agrandi avant de choisir le souvenir. La coche sous chaque vignette
+permet aussi une sélection rapide. La recherche par contexte utilise la recherche
+intelligente d'Immich (qui doit être activée et avoir indexé la photothèque).
+Le filtre par visage utilise les personnes reconnues dans Immich, avec leur
+portrait et une recherche par nom. Il peut être combiné au contexte. La clé doit
+aussi disposer de `person.read` pour ce filtre et ses portraits.
+
 Les fichiers sont copiés dans Parenthèse : ils restent disponibles indépendamment
 d'Immich après l'enregistrement. Les limites existantes s'appliquent : 5 Mo par
 photo, 20 Mo par vidéo et quota de l'arbre. Les formats pris en charge sont ceux

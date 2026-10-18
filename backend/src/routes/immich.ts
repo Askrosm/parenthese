@@ -103,27 +103,32 @@ export const immichRoutes: FastifyPluginAsync = async (app) => {
   app.get('/trees/:id/immich/assets', async (request, reply) => {
     if (request.actor?.kind !== 'user') return reply.code(401).send({ error: 'authentication_required' })
     const params = treeParamSchema.safeParse(request.params)
-    const query = z.object({ page: z.coerce.number().int().min(1).max(100000).default(1), type: z.enum(['IMAGE', 'VIDEO']).default('IMAGE') }).safeParse(request.query)
+    const query = z.object({
+      page: z.coerce.number().int().min(1).max(100000).default(1),
+      type: z.enum(['IMAGE', 'VIDEO']).default('IMAGE'),
+      q: z.string().trim().max(500).optional(),
+      personId: z.string().refine(isImmichPersonId).optional(),
+    }).safeParse(request.query)
     if (!params.success || !query.success) return reply.code(400).send({ error: 'invalid_params' })
     if (!(await requireAdminMembership(app, request.actor.userId, params.data.id))) return reply.code(403).send({ error: 'forbidden' })
     const client = await getTreeImmichClient(app.prisma, params.data.id)
     if (!client) return reply.code(503).send({ error: 'immich_not_configured' })
     try {
       reply.header('Cache-Control', 'no-store')
-      return reply.send(await client.listAssets(query.data.page, query.data.type))
+      return reply.send(await client.listAssets(query.data.page, query.data.type, { query: query.data.q, personId: query.data.personId }))
     } catch (error) { return replyImmichError(request, reply, error) }
   })
 
   app.get('/trees/:id/immich/assets/:assetId/:variant', async (request, reply) => {
     if (request.actor?.kind !== 'user') return reply.code(401).send({ error: 'authentication_required' })
-    const params = z.object({ id: z.string().min(1), assetId: z.string().refine(isImmichPersonId), variant: z.enum(['thumbnail', 'original']) }).safeParse(request.params)
+    const params = z.object({ id: z.string().min(1), assetId: z.string().refine(isImmichPersonId), variant: z.enum(['thumbnail', 'preview', 'original']) }).safeParse(request.params)
     if (!params.success) return reply.code(400).send({ error: 'invalid_params' })
     if (!(await requireAdminMembership(app, request.actor.userId, params.data.id))) return reply.code(403).send({ error: 'forbidden' })
     const client = await getTreeImmichClient(app.prisma, params.data.id)
     if (!client) return reply.code(503).send({ error: 'immich_not_configured' })
     try {
-      const thumbnail = params.data.variant === 'thumbnail'
-      const bytes = await client.getAssetBytes(params.data.assetId, thumbnail, (thumbnail ? 5 : 20) * 1024 * 1024)
+      const thumbnail = params.data.variant !== 'original'
+      const bytes = await client.getAssetBytes(params.data.assetId, thumbnail, (thumbnail ? 5 : 20) * 1024 * 1024, params.data.variant === 'preview')
       if (!bytes) return reply.code(413).send({ error: 'immich_asset_too_large' })
       const mime = sniffMimeType(bytes, 'video')
       if (!mime || !(mime.startsWith('image/') || (!thumbnail && mime.startsWith('video/')))) return reply.code(400).send({ error: 'invalid_immich_media' })

@@ -29,8 +29,11 @@ export function getImmichErrorMessage(error, t) {
   return error?.message || t('Erreur inattendue.')
 }
 
-export function listImmichAssets(treeId, token, page = 1, type = 'IMAGE') {
-  return apiRequest(`/trees/${encodeURIComponent(treeId)}/immich/assets?page=${page}&type=${type}`, withAuth({}, token))
+export function listImmichAssets(treeId, token, page = 1, type = 'IMAGE', { query, personId, signal } = {}) {
+  const search = new URLSearchParams({ page: String(page), type })
+  if (query?.trim()) search.set('q', query.trim())
+  if (personId) search.set('personId', personId)
+  return apiRequest(`/trees/${encodeURIComponent(treeId)}/immich/assets?${search}`, withAuth({ signal }, token))
 }
 
 export async function fetchImmichAsset(treeId, assetId, token, variant = 'thumbnail', signal) {

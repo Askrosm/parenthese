@@ -6,7 +6,7 @@ on:
       version:
         description: Version de test (sans v)
         required: true
-        default: 1.1.0-immich.1
+        default: 1.1.0-immich.2
 
 permissions:
   contents: read
@@ -76,6 +76,8 @@ jobs:
           set -euo pipefail
           cat > release-notes.md <<EOF
           Version de test : souvenirs photo et vidéo depuis Immich.
+
+          Galerie intégrée au style de Parenthèse, aperçu agrandi avant sélection, recherche par contexte et filtre par visage combinables. La recherche intelligente doit être activée dans Immich ; le filtre visage utilise la permission person.read.
 
           Image AIO : \`$IMAGE\` (linux/amd64 et linux/arm64).
 
