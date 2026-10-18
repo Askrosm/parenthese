@@ -174,12 +174,117 @@ function buildContributionChangesFromDraft(draft = {}) {
     if (canonicalRelation.relationType === 'spouse') {
       const union = unions.find((candidate) => (
         (String(candidate.partner1Id) === canonicalRelation.sourcePersonId
-          && Str…23677 tokens truncated…es photos : le .ged s'importe, les photos attendent l'étape des visages
-          let bundle
-          try {
-            bundle = await readGedcomBundle(payload.gedcomFile)
-          } catch (error) {
-            throw new Error(error?.code === 'no_gedcom' ? error.message : zipErrorMessage(error), { cause: error })
+          && String(candidate.partner2Id) === canonicalRelation.targetPersonId)
+        || (String(candidate.partner1Id) === canonicalRelation.targetPersonId
+          && String(candidate.partner2Id) === canonicalRelation.sourcePersonId)
+      ))
+
+      if (!union) {
+        return null
+      }
+
+      return {
+        entityType: 'union',
+        action: 'delete',
+        entityId: String(union.id),
+      }
+    }
+
+    let link = filiations.find((candidate) => (
+      String(candidate.childId) === canonicalRelation.childPersonId
+      && String(candidate.parentId) === canonicalRelation.parentPersonId
+    ))
+
+    if (!link) {
+      const relatedUnionIds = new Set(
+        unions
+          .filter((candidate) => (
+            String(candidate.partner1Id) === canonicalRelation.parentPersonId
+            || String(candidate.partner2Id) === canonicalRelation.parentPersonId
+          ))
+          .map((candidate) => String(candidate.id)),
+      )
+
+      link = filiations.find((candidate) => (
+        String(candidate.childId) === canonicalRelation.childPersonId
+        && candidate.unionId
+        && relatedUnionIds.has(String(candidate.unionId))
+      ))
+    }
+
+    if (!link) {
+      return null
+    }
+
+    return {
+      entityType: 'parent_child_link',
+      action: 'delete',
+      entityId: String(link.id),
+    }
+  }
+
+  const addedPersons = Array.isArray(draft.addedPersons) ? draft.addedPersons : []
+  for (const person of addedPersons) {
+    if (!person || typeof person !== 'object') continue
+    if (!person.firstName || !person.lastName) continue
+
+    // Identifiant provisoire : le serveur le remplace par le vrai id pour créer les liens
+    const ref = typeof person.ref === 'string' && person.ref.startsWith('tmp:') ? person.ref : null
+
+    changes.push({
+      entityType: 'person',
+      action: 'create',
+      after: {
+        ...(ref ? { ref } : {}),
+        firstName: String(person.firstName).trim(),
+        lastName: String(person.lastName).trim(),
+        birthName: person.birthName ? String(person.birthName).trim() : null,
+        birthDate: person.birthDate || null,
+        deathDate: person.deathDate || null,
+        isDeceased: !person.deathDate && Boolean(person.isDeceased),
+      },
+    })
+
+    if (!ref) continue
+
+    const linkedParentIds = new Set()
+    for (const rel of Array.isArray(person.relations) ? person.relations : []) {
+      if (!rel?.personId) continue
+      const relatedId = String(rel.personId)
+      if (rel.type === 'child') {
+        linkedParentIds.add(relatedId)
+        changes.push({ entityType: 'parent_child_link', action: 'create', after: { parentPersonId: relatedId, childPersonId: ref, parentageType: 'biologique' } })
+      } else if (rel.type === 'parent') {
+        changes.push({ entityType: 'parent_child_link', action: 'create', after: { parentPersonId: ref, childPersonId: relatedId, parentageType: 'biologique' } })
+      } else if (rel.type === 'spouse') {
+        changes.push({ entityType: 'union', action: 'create', after: { partner1PersonId: relatedId, partner2PersonId: ref, unionType: 'mariage' } })
+      }
+    }
+
+    for (const link of Array.isArray(person.siblingParentLinks) ? person.siblingParentLinks : []) {
+      if (!link?.parentId || linkedParentIds.has(String(link.parentId))) continue
+      linkedParentIds.add(String(link.parentId))
+      changes.push({
+        entityType: 'parent_child_link',
+        action: 'create',
+        after: { parentPersonId: String(link.parentId), childPersonId: ref, viaUnionId: link.unionId || null, parentageType: 'biologique' },
+      })
+    }
+  }
+
+  const modifiedPersons = draft.modifiedPersons && typeof draft.modifiedPersons === 'object'
+    ? draft.modifiedPersons
+    : {}
+
+  for (const [personId, rawChanges] of Object.entries(modifiedPersons)) {
+    const source = rawChanges && typeof rawChanges === 'object' ? rawChanges : {}
+    const after = {}
+
+    if (Object.prototype.hasOwnProperty.call(source, 'firstName')) after.firstName = source.firstName || ''
+    if (Object.prototype.hasOwnProperty.call(source, 'lastName')) after.lastName = source.lastName || ''
+    if (Object.prototype.hasOwnProperty.call(source, 'birthName')) after.birthName = (source.birthName || '').trim() || null
+    if (Object.prototype.hasOwnProperty.call(source, 'birthYear')) after.birthDate = yearToIsoDate(source.birthYear)
+    if (Object.prototype.hasOwnProp…21521 tokens truncated…, { cause: error })
           }
           bundledFiles = bundle.bundledFiles
           const content = (await readGedcomFile(bundle.gedcomFile)).text
